@@ -1,0 +1,81 @@
+name: Build Windows App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache Pub & .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            simple_live_app/.dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
+
+      - name: Set up Flutter
+        uses: flutter-actions/setup-flutter@v3
+        with:
+          channel: stable
+          flutter-version: '3.24.3'
+          cache: true
+
+      - name: Install Dependencies
+        working-directory: simple_live_app
+        run: flutter pub get
+
+      - name: Enable Windows Desktop
+        working-directory: simple_live_app
+        run: flutter config --enable-windows-desktop
+
+      - name: Build Windows Executable
+        working-directory: simple_live_app
+        run: flutter build windows --release
+
+      - name: Get Version from pubspec.yaml
+        working-directory: simple_live_app
+        shell: pwsh
+        run: |
+          $content = Get-Content pubspec.yaml -Raw
+          if ($content -match 'version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+(\d+)') {
+            $mainVersion = $matches[1]
+            $buildNumber = $matches[2]
+          } elseif ($content -match 'version:\s*([0-9]+\.[0-9]+\.[0-9]+)') {
+            $mainVersion = $matches[1]; $buildNumber = ""
+          } else {
+            $mainVersion = "0.0.0"; $buildNumber = ""
+          }
+          if ($buildNumber -ne "") { $customVersion = "$mainVersion`_$buildNumber" } else { $customVersion = $mainVersion }
+          Add-Content -Path $env:GITHUB_ENV -Value "APP_VERSION=$customVersion"
+
+      - name: Package Windows build into zip
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          $outDir = Join-Path $PWD "simple_live_app\build\windows\x64\runner\Release"
+          if (-Not (Test-Path $outDir)) { Write-Error "Build output not found: $outDir"; exit 1 }
+          $zip = Join-Path $PWD "simple_live_app_${{ env.APP_VERSION }}_windows.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path (Join-Path $outDir '*') -DestinationPath $zip -Force
+          Write-Output "Created: $zip"
+
+      - name: List packaged artifact
+        run: dir -Force simple_live_app_${{ env.APP_VERSION }}_windows.zip
+
+      - name: Upload Windows Executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: simple_live_app-${{ env.APP_VERSION }}-windows
+          path: simple_live_app_${{ env.APP_VERSION }}_windows.zip
