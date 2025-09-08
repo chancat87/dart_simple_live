@@ -1,0 +1,49 @@
+name: Build Windows App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.3'
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        working-directory: simple_live_app
+        run: flutter pub get
+
+      - name: Enable Windows Desktop
+        working-directory: simple_live_app
+        run: flutter config --enable-windows-desktop
+
+      - name: Build Windows Executable
+        working-directory: simple_live_app
+        run: flutter build windows --release
+
+      - name: Get Version from pubspec.yaml
+        working-directory: simple_live_app
+        run: |
+          $version = (Get-Content pubspec.yaml | Select-String -Pattern '^version: (\d+\.\d+\.\d+)\+(\d*)').Matches
+          $mainVersion = $version.Groups[1].Value
+          $buildNumber = if ($version.Groups[2].Value) { "_" + $version.Groups[2].Value } else { "" }
+          $customVersion = "$mainVersion$buildNumber"
+          echo "APP_VERSION=$customVersion" >> $env:GITHUB_ENV
+      - name: Upload Windows Executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: simple_live_app-${{ env.APP_VERSION }}-windows
+          path: simple_live_app/build/windows/x64/runner/Release/
