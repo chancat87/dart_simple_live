@@ -1,4 +1,4 @@
-name: Windows App
+name: Build Windows App
 
 on:
   push:
@@ -31,6 +31,12 @@ jobs:
           channel: stable
           flutter-version: '3.24.3'
           cache: true
+
+      - name: Ensure intl compatible in simple_live_app
+        working-directory: simple_live_app
+        shell: pwsh
+        run: |
+          flutter pub add intl:^0.20.2 || true
 
       - name: Install Dependencies
         working-directory: simple_live_app
@@ -70,9 +76,6 @@ jobs:
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path (Join-Path $outDir '*') -DestinationPath $zip -Force
           Write-Output "Created: $zip"
-
-      - name: List packaged artifact
-        run: dir -Force simple_live_app_${{ env.APP_VERSION }}_windows.zip
 
       - name: Upload Windows Executable
         uses: actions/upload-artifact@v4
