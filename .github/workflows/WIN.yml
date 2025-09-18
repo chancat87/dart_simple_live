@@ -1,0 +1,60 @@
+name: Windows App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.3'
+          channel: 'stable'
+          cache: true
+
+      - name: Ensure intl compatible in simple_live_app
+        working-directory: simple_live_app
+        run: flutter pub add intl:^0.20.2 || true
+
+      - name: Install Dependencies
+        working-directory: simple_live_app
+        run: flutter pub get
+
+      - name: Enable Windows Desktop
+        working-directory: simple_live_app
+        run: flutter config --enable-windows-desktop
+
+      - name: Build Windows Executable
+        working-directory: simple_live_app
+        run: flutter build windows --release
+
+      - name: Get Version from pubspec.yaml
+        working-directory: simple_live_app
+        shell: pwsh
+        run: |
+          $version = (Get-Content pubspec.yaml | Select-String -Pattern '^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+(\d*)').Matches
+          if ($version.Count -gt 0) {
+            $mainVersion = $version.Groups[1].Value
+            $buildNumber = if ($version.Groups[2].Value) { "_" + $version.Groups[2].Value } else { "" }
+          } else {
+            $mainVersion = "0.0.0"; $buildNumber = ""
+          }
+          $customVersion = "$mainVersion$buildNumber"
+          Add-Content -Path $env:GITHUB_ENV -Value "APP_VERSION=$customVersion"
+      - name: Upload Windows Executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: simple_live_app-${{ env.APP_VERSION }}-windows
+          path: simple_live_app/build/windows/x64/runner/Release/
