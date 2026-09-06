@@ -34,11 +34,12 @@ Simple Live 会继续保持开源和免费使用。赞助费用主要用于同�
 
 ## 用户群
 
-扫码加入 SimpleLive 用户群，交流使用问题和反馈建议。
+扫码添加我的小号，我会拉你加入 SimpleLive 用户群，交流使用问题和反馈建议。
 
 <p align="center">
-  <img width="360" src="/assets/user_group_wechat.jpg" alt="SimpleLive 用户群二维码">
+  <img width="360" src="/assets/user_group_wechat.jpg" alt="我的小号">
 </p>
+
 
 ## Release 资产
 
