@@ -477,7 +477,7 @@ class AppSettingsController extends GetxController {
     if (siteId.isEmpty || qualityName.isEmpty || offsetFromTop < 0) {
       return;
     }
-    final rawMap = LocalStorageService.instance.getValue(
+    final rawMap = LocalStorageService.instance.getValue<dynamic>(
       LocalStorageService.kQualityMemory,
       <String, dynamic>{},
     );
@@ -495,7 +495,7 @@ class AppSettingsController extends GetxController {
     if (siteId.isEmpty) {
       return null;
     }
-    final rawMap = LocalStorageService.instance.getValue(
+    final rawMap = LocalStorageService.instance.getValue<dynamic>(
       LocalStorageService.kQualityMemory,
       <String, dynamic>{},
     );
