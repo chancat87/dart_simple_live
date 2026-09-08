@@ -1056,6 +1056,14 @@ void showQualitesInfo(LiveRoomController controller) {
           onTap: () {
             Utils.hideRightDialog();
             controller.currentQuality = i;
+            // 保存清晰度记忆。
+            if (i >= 0 && i < controller.qualites.length) {
+              AppSettingsController.instance.saveQualityMemory(
+                siteId: controller.site.id,
+                qualityName: controller.qualites[i].quality,
+                offsetFromTop: i,
+              );
+            }
             controller.getPlayUrl();
           },
         );

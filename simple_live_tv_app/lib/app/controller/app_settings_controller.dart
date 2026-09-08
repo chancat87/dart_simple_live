@@ -1,6 +1,7 @@
 import 'package:simple_live_tv_app/services/local_storage_service.dart';
 
 import 'package:get/get.dart';
+import 'package:simple_live_core/simple_live_core.dart';
 
 class AppSettingsController extends GetxController {
   static AppSettingsController get instance =>
@@ -465,6 +466,43 @@ class AppSettingsController extends GetxController {
     qualityLevelCellular.value = level;
     LocalStorageService.instance
         .setValue(LocalStorageService.kQualityLevelCellular, level);
+  }
+
+  /// 保存某平台的清晰度记忆（名称 + 距最高档偏移）。
+  void saveQualityMemory({
+    required String siteId,
+    required String qualityName,
+    required int offsetFromTop,
+  }) {
+    if (siteId.isEmpty || qualityName.isEmpty || offsetFromTop < 0) {
+      return;
+    }
+    final rawMap = LocalStorageService.instance.getValue(
+      LocalStorageService.kQualityMemory,
+      <String, dynamic>{},
+    );
+    final map = rawMap is Map<String, dynamic> ? rawMap : <String, dynamic>{};
+    map[siteId] = QualityMemory.encodeEntry(
+      qualityName: qualityName,
+      offsetFromTop: offsetFromTop,
+    );
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kQualityMemory, map);
+  }
+
+  /// 读取某平台的清晰度记忆，不存在返回 null。
+  ({String name, int offset})? getQualityMemory(String siteId) {
+    if (siteId.isEmpty) {
+      return null;
+    }
+    final rawMap = LocalStorageService.instance.getValue(
+      LocalStorageService.kQualityMemory,
+      <String, dynamic>{},
+    );
+    if (rawMap is! Map) {
+      return null;
+    }
+    return QualityMemory.decodeEntry(rawMap[siteId]);
   }
 
   var autoExitEnable = false.obs;

@@ -521,6 +521,14 @@ void showPlayerSettings(LiveRoomController controller) {
                   onChanged: (e) {
                     Get.back();
                     controller.currentQuality = e;
+                    // 保存清晰度记忆。
+                    if (e >= 0 && e < controller.qualites.length) {
+                      AppSettingsController.instance.saveQualityMemory(
+                        siteId: controller.site.id,
+                        qualityName: controller.qualites[e].quality,
+                        offsetFromTop: e,
+                      );
+                    }
                     controller.getPlayUrl();
                   },
                 ),

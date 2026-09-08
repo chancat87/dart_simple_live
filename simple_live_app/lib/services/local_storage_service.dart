@@ -66,6 +66,7 @@ class LocalStorageService extends GetxService {
   static const String kChatBubbleStyle = "ChatBubbleStyle";
   static const String kQualityLevel = "QualityLevel";
   static const String kQualityLevelCellular = "QualityLevelCellular";
+  static const String kQualityMemory = "QualityMemory";
   static const String kAutoExitEnable = "AutoExitEnable";
   static const String kAutoExitDuration = "AutoExitDuration";
   static const String kRoomAutoExitDuration = "RoomAutoExitDuration";

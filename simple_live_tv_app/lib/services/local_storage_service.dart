@@ -94,11 +94,14 @@ class LocalStorageService extends GetxService {
   /// 聊天区-气泡样式
   static const String kChatBubbleStyle = "ChatBubbleStyle";
 
-  /// 播放清晰度，0=低，1=中，2=高
+  /// 播放清晰度，0=低，1=中，2=高，3=记住上次
   static const String kQualityLevel = "QualityLevel";
 
-  /// 蜂窝网络下播放清晰度，0=低，1=中，2=高
+  /// 蜂窝网络下播放清晰度，0=低，1=中，2=高，3=记住上次
   static const String kQualityLevelCellular = "QualityLevelCellular";
+
+  /// 清晰度记忆：Map<siteId, {name, offset}>
+  static const String kQualityMemory = "QualityMemory";
 
   /// 开启定时关闭
   static const String kAutoExitEnable = "AutoExitEnable";

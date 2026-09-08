@@ -271,6 +271,7 @@ class SettingsPage extends GetView<SettingsController> {
               0: "最低画质",
               1: "中等画质",
               2: "最高画质",
+              3: "记住上次画质",
             },
             value: AppSettingsController.instance.qualityLevel.value,
             onChanged: (e) {

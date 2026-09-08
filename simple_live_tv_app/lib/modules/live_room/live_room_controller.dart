@@ -834,6 +834,25 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
       } else if (qualityLevel == 0) {
         //最低
         currentQuality = playQualites.length - 1;
+      } else if (qualityLevel == 3) {
+        // 记住上次：按名称精确匹配，名称不存在时按偏移兜底。
+        final memory =
+            AppSettingsController.instance.getQualityMemory(site.id);
+        if (memory != null) {
+          final resolved = QualityMemory.resolveIndex(
+            qualities: playQualites,
+            savedName: memory.name,
+            savedOffset: memory.offset,
+          );
+          if (resolved >= 0) {
+            currentQuality = resolved;
+          }
+        }
+        // 找不到记忆或匹配失败时，走"中等"兜底（与旧 else 分支相同）。
+        if (currentQuality < 0) {
+          int middle = (playQualites.length / 2).floor();
+          currentQuality = middle;
+        }
       } else {
         //中间值
         int middle = (playQualites.length / 2).floor();
