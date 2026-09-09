@@ -22,6 +22,34 @@ void main() {
       expect(huya.roomId, "abc.def");
     });
 
+    test('房间号尾随标点符号被自动清理', () {
+      // 测试各种尾随标点符号
+      final douyinDot = parse("https://live.douyin.com/123456.");
+      expect(douyinDot!.roomId, "123456");
+
+      final douyinComma = parse("https://live.douyin.com/123456,");
+      expect(douyinComma!.roomId, "123456");
+
+      final huyaSemicolon = parse("https://www.huya.com/660148;");
+      expect(huyaSemicolon!.roomId, "660148");
+
+      final biliQuestion = parse("https://live.bilibili.com/2225346?");
+      expect(biliQuestion!.roomId, "2225346");
+
+      // 中文标点也应该被清理
+      final douyinChinese = parse("https://live.douyin.com/123456。");
+      expect(douyinChinese!.roomId, "123456");
+
+      // 快手房间号尾随点号应该被清理
+      final kuaishou = parse("https://live.kuaishou.com/u/Cc_2365.");
+      expect(kuaishou!.siteId, LiveUrlParser.siteKuaishou);
+      expect(kuaishou.roomId, "Cc_2365");
+
+      // 多个尾随标点一起清理
+      final multiple = parse("https://live.douyin.com/123456.,;");
+      expect(multiple!.roomId, "123456");
+    });
+
     test('www.douyin.com/live/数字', () {
       final result = parse("https://www.douyin.com/live/884412345678");
       expect(result!.siteId, LiveUrlParser.siteDouyin);
@@ -104,6 +132,24 @@ void main() {
       final short = parse("https://v.kuaishou.com/nQxz1");
       expect(short!.isShortLink, isTrue);
       expect(short.siteId, LiveUrlParser.siteKuaishou);
+    });
+
+    test('快手房间号不支持点号', () {
+      // 快手房间号中间含点号应该被拒绝（快手平台不支持）
+      final withDot = parse("https://live.kuaishou.com/u/user.name");
+      expect(withDot, isNull);
+
+      // 但尾随点号会被清理，所以可以通过
+      final trailingDot = parse("https://live.kuaishou.com/u/username.");
+      expect(trailingDot, isNotNull);
+      expect(trailingDot!.roomId, "username");
+
+      // 快手支持下划线和连字符
+      final withUnderscore = parse("https://live.kuaishou.com/u/user_name");
+      expect(withUnderscore!.roomId, "user_name");
+
+      final withHyphen = parse("https://live.kuaishou.com/u/user-name");
+      expect(withHyphen!.roomId, "user-name");
     });
 
     test('无法识别的链接返回 null', () {

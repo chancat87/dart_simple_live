@@ -1,8 +1,11 @@
 class KuaishouLiveLink {
   static final RegExp _roomIdPattern = RegExp(r'^[A-Za-z0-9_-]+$');
+  // 尾随标点符号正则，与 ParseController.extractHttpUrl 保持一致
+  static final RegExp _trailingPunctuationPattern = RegExp(r"[，。！？、；：,.;:!?]+$");
 
   static Uri? publicRoomUri(String roomId) {
-    final normalized = roomId.trim();
+    // 先清理尾随标点，再trim，确保与URL提取的行为一致
+    final normalized = roomId.replaceFirst(_trailingPunctuationPattern, "").trim();
     if (!_roomIdPattern.hasMatch(normalized)) {
       return null;
     }
@@ -69,6 +72,8 @@ class KuaishouLiveLink {
               segments[1] == "live"
         ? segments[2]
         : "";
-    return _roomIdPattern.hasMatch(roomId) ? roomId : null;
+    // 清理尾随标点后再验证，确保行为一致
+    final cleanedRoomId = roomId.replaceFirst(_trailingPunctuationPattern, "");
+    return _roomIdPattern.hasMatch(cleanedRoomId) ? cleanedRoomId : null;
   }
 }

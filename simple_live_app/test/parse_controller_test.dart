@@ -49,6 +49,16 @@ void main() {
       );
     });
 
+    test('extracts URL from complex share text with emoji and timestamps', () {
+      const shareText =
+          '3- #在抖音，记录美好生活#【小龙龙龙龙】正在直播，来和我一起支持Ta吧。复制下方链接，打开【抖音】，直接观看直播！ https://v.douyin.com/qlg5UVzWw5s/ 2@2.com :2pm';
+
+      expect(
+        ParseController.extractHttpUrl(shareText),
+        'https://v.douyin.com/qlg5UVzWw5s/',
+      );
+    });
+
     test('removes punctuation appended by prose', () {
       expect(
         ParseController.extractHttpUrl(
