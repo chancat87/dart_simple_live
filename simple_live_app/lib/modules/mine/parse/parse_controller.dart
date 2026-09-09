@@ -257,17 +257,15 @@ class ParseController extends GetxController {
   }
 
   static String extractHttpUrl(String text) {
+    // 正则排除常见的中文标点符号作为URL边界
+    // 但不再进行二次清理，因为标点符号可能是用户名的合法部分
+    // 例如：Cc_2365. 或 user!!! 等
     return RegExp(
-          r"https?://[^\s<>\u3000，。！？、；：]+",
+          r”https?://[^\s<>\u3000，。！？、；：]+”,
           caseSensitive: false,
         )
             .firstMatch(text)
-            ?.group(0)
-            ?.replaceFirst(
-              RegExp(r"[，。！？、；：,.;:!?]+$"),
-              "",
-            )
-            .replaceFirst(RegExp(r'''[)\]}>'"）】》”’]+$'''), "") ??
-        "";
+            ?.group(0) ??
+        “”;
   }
 }

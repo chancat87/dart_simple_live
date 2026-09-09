@@ -720,12 +720,32 @@ class DouyinSite implements LiveSite {
   Future<LiveRoomDetail> _getRoomDetailByWebRidHtml(String webRid) async {
     final stopwatch = Stopwatch()..start();
     var roomData = await _getRoomDataByHtml(webRid);
-    var roomId = roomData["roomStore"]["roomInfo"]["room"]["id_str"].toString();
+    
+    // 安全地获取房间信息，添加空值检查
+    final roomStore = roomData["roomStore"];
+    if (roomStore == null) {
+      throw CoreError("抖音直播间数据异常：roomStore 为空，可能该用户不存在或未开播");
+    }
+    
+    final roomInfo = roomStore["roomInfo"];
+    if (roomInfo == null) {
+      throw CoreError("抖音直播间数据异常：roomInfo 为空，可能该用户不存在或未开播");
+    }
+    
+    var room = roomInfo["room"];
+    if (room == null) {
+      throw CoreError("抖音直播间数据异常：room 为空，可能该用户 '$webRid' 不存在或从未开播");
+    }
+    
+    var roomId = room["id_str"]?.toString();
+    if (roomId == null || roomId.isEmpty) {
+      throw CoreError("抖音直播间数据异常：无法获取房间ID");
+    }
+    
     var userUniqueId = resolveUserUniqueIdFromRoomData(roomData);
 
-    var room = roomData["roomStore"]["roomInfo"]["room"];
     var owner = room["owner"];
-    var anchor = roomData["roomStore"]["roomInfo"]["anchor"];
+    var anchor = roomInfo["anchor"];
     final categoryInfo = _resolveDouyinCategoryInfo(room);
     var roomStatus = (asT<int?>(room["status"]) ?? 0) == 2;
 

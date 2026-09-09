@@ -32,8 +32,6 @@ class LiveUrlParser {
 
   static final RegExp _roomIdPattern = RegExp(r'^[A-Za-z0-9._-]+$');
   static final RegExp _numericRoomIdPattern = RegExp(r'^\d+$');
-  // 尾随标点符号正则，与 ParseController.extractHttpUrl 保持一致
-  static final RegExp _trailingPunctuationPattern = RegExp(r"[，。！？、；：,.;:!?]+$");
 
   /// 解析直播间链接，无法识别时返回 null。
   static LiveParsedUrl? parse(String value) {
@@ -143,18 +141,14 @@ class LiveUrlParser {
   }
 
   static LiveParsedUrl? _room(String siteId, String roomId, Uri uri) {
-    // 清理尾随标点后再验证，确保行为一致
-    final cleanedRoomId = roomId.replaceFirst(_trailingPunctuationPattern, "");
-    return _roomIdPattern.hasMatch(cleanedRoomId)
-        ? LiveParsedUrl(siteId: siteId, roomId: cleanedRoomId, uri: uri)
+    return _roomIdPattern.hasMatch(roomId)
+        ? LiveParsedUrl(siteId: siteId, roomId: roomId, uri: uri)
         : null;
   }
 
   static LiveParsedUrl? _numericRoom(String siteId, String roomId, Uri uri) {
-    // 清理尾随标点后再验证，确保行为一致
-    final cleanedRoomId = roomId.replaceFirst(_trailingPunctuationPattern, "");
-    return _numericRoomIdPattern.hasMatch(cleanedRoomId)
-        ? LiveParsedUrl(siteId: siteId, roomId: cleanedRoomId, uri: uri)
+    return _numericRoomIdPattern.hasMatch(roomId)
+        ? LiveParsedUrl(siteId: siteId, roomId: roomId, uri: uri)
         : null;
   }
 }
