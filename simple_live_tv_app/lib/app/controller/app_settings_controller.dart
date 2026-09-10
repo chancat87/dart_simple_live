@@ -30,6 +30,10 @@ class AppSettingsController extends GetxController {
   static const int kMultiRoomDefaultGap = 8;
   static const int kMultiRoomMinGap = 0;
   static const int kMultiRoomMaxGap = 24;
+
+  /// 遥控器OK键行为
+  static const int kOkKeyActionShowControls = 0;
+  static const int kOkKeyActionPlayPause = 1;
   static const List<int> kUpdateFollowThreadOptions = [
     0,
     1,
@@ -163,6 +167,9 @@ class AppSettingsController extends GetxController {
 
     playerAutoPause.value = LocalStorageService.instance
         .getValue(LocalStorageService.kPlayerAutoPause, false);
+
+    okKeyAction.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kOkKeyAction, kOkKeyActionShowControls);
 
     autoFullScreen.value = LocalStorageService.instance
         .getValue(LocalStorageService.kAutoFullScreen, false);
@@ -552,6 +559,18 @@ class AppSettingsController extends GetxController {
     LocalStorageService.instance
         .setValue(LocalStorageService.kPlayerAutoPause, e);
   }
+
+  /// 遥控器OK键行为：0=显示/隐藏控制栏（默认） 1=暂停/继续
+  var okKeyAction = kOkKeyActionShowControls.obs;
+  void setOkKeyAction(int e) {
+    if (e != kOkKeyActionShowControls && e != kOkKeyActionPlayPause) {
+      return;
+    }
+    okKeyAction.value = e;
+    LocalStorageService.instance.setValue(LocalStorageService.kOkKeyAction, e);
+  }
+
+  bool get okKeyTriggersPlayPause => okKeyAction.value == kOkKeyActionPlayPause;
 
   var autoFullScreen = false.obs;
   void setAutoFullScreen(bool e) {

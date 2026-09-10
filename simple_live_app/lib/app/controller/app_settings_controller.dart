@@ -965,7 +965,8 @@ class AppSettingsController extends GetxController {
       LocalStorageService.kQualityMemory,
       <String, dynamic>{},
     );
-    final map = rawMap is Map<String, dynamic> ? rawMap : <String, dynamic>{};
+    // Hive 反序列化可能返回非指定泛型的 Map，重新收敛类型
+    final map = Map<String, dynamic>.from(rawMap as Map);
     map[siteId] = QualityMemory.encodeEntry(
       qualityName: qualityName,
       offsetFromTop: offsetFromTop,
@@ -983,9 +984,7 @@ class AppSettingsController extends GetxController {
       LocalStorageService.kQualityMemory,
       <String, dynamic>{},
     );
-    if (rawMap is! Map) {
-      return null;
-    }
+    // decodeEntry 自身会校验非 Map 输入并返回 null，无需在此重复判断类型
     return QualityMemory.decodeEntry(rawMap[siteId]);
   }
 

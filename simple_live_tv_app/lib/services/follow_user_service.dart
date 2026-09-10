@@ -13,6 +13,7 @@ import 'package:simple_live_tv_app/app/log.dart';
 import 'package:simple_live_tv_app/app/sites.dart';
 import 'package:simple_live_tv_app/app/utils.dart';
 import 'package:simple_live_tv_app/models/db/follow_user.dart';
+import 'package:simple_live_tv_app/models/db/follow_user_tag.dart';
 import 'package:simple_live_tv_app/services/current_room_service.dart';
 import 'package:simple_live_tv_app/services/db_service.dart';
 import 'package:simple_live_tv_app/services/local_storage_service.dart';
@@ -32,6 +33,9 @@ class FollowUserService extends BasePageController<FollowUser> {
   StreamSubscription<dynamic>? subscription;
   RxList<FollowUser> allList = RxList<FollowUser>();
   RxList<FollowUser> livingList = RxList<FollowUser>();
+
+  /// 自定义标签列表（Hive 实体，与手机端 FollowUserTag 对齐）
+  RxList<FollowUserTag> followTagList = RxList<FollowUserTag>();
   final Set<String> _previewRefreshingKeys = <String>{};
   var searchKeyword = "".obs;
   var selectedTagName = allTagName.obs;
@@ -62,6 +66,7 @@ class FollowUserService extends BasePageController<FollowUser> {
       refreshData(forceStatus: false);
     });
 
+    initTagListWithMigration();
     final initialLoad =
         list.isEmpty ? refreshData(forceStatus: false) : Future<void>.value();
     unawaited(initialLoad.whenComplete(_refreshOnHomeStartup));
@@ -70,6 +75,43 @@ class FollowUserService extends BasePageController<FollowUser> {
     }
     initTimer();
     super.onInit();
+  }
+
+  /// 加载标签实体，并把旧版本"仅存于 FollowUser.tag 字符串"的标签迁移为实体
+  Future<void> initTagListWithMigration() async {
+    followTagList.assignAll(DBService.instance.getFollowTagList());
+    final follows = DBService.instance.getFollowList();
+    bool migrated = false;
+    for (final item in follows) {
+      final tagName = item.tag.trim();
+      if (tagName.isEmpty ||
+          tagName == allTagName ||
+          DBService.instance.getFollowTagExistByTag(tagName)) {
+        continue;
+      }
+      await DBService.instance.addFollowTag(tagName);
+      migrated = true;
+    }
+    if (migrated) {
+      followTagList.assignAll(DBService.instance.getFollowTagList());
+    }
+    // 把实体里的成员关系补全到实体 userId 列表（旧数据只有字符串冗余）
+    for (final tag in followTagList) {
+      final memberIds = follows
+          .where((item) => item.tag.trim() == tag.tag)
+          .map((item) => item.id)
+          .toSet();
+      bool changed = false;
+      for (final id in memberIds) {
+        if (!tag.userId.contains(id)) {
+          tag.userId.add(id);
+          changed = true;
+        }
+      }
+      if (changed) {
+        await DBService.instance.updateFollowTag(tag);
+      }
+    }
   }
 
   /// Load local follows immediately, then perform one status refresh before
@@ -105,10 +147,21 @@ class FollowUserService extends BasePageController<FollowUser> {
         ),
         (_) {
           if (updating.value) {
-            Log.logPrint("上一轮仍在刷新，跳过本次自动刷新");
+            // 撞上未完成的上一轮：短延迟重试而不是整轮丢弃
+            Log.i("自动刷新撞上一轮未完成任务，60秒后重试");
+            unawaited(
+              Future<void>.delayed(const Duration(minutes: 1), () {
+                if (!updating.value &&
+                    AppSettingsController
+                        .instance.autoUpdateFollowEnable.value) {
+                  Log.i("重试自动刷新");
+                  unawaited(_startAutomaticRefresh());
+                }
+              }),
+            );
             return;
           }
-          Log.logPrint("Update Follow Timer");
+          Log.i("Update Follow Timer");
           unawaited(_startAutomaticRefresh());
         },
       );
@@ -279,11 +332,7 @@ class FollowUserService extends BasePageController<FollowUser> {
       "page:${selectedTagName.value}:${currentDisplayPage.value}";
 
   List<String> get tagOptions {
-    final tags = allList
-        .map((item) => item.tag.trim())
-        .where((tag) => tag.isNotEmpty && tag != allTagName)
-        .toSet()
-        .toList()
+    final tags = followTagList.map((item) => item.tag.trim()).toSet().toList()
       ..sort();
     return [allTagName, ...tags];
   }
@@ -350,6 +399,143 @@ class FollowUserService extends BasePageController<FollowUser> {
     if (!tagOptions.contains(selectedTagName.value)) {
       selectedTagName.value = allTagName;
     }
+  }
+
+  /// 添加自定义标签，失败时 toast 并返回 false
+  Future<bool> addTag(String name) async {
+    final tagName = name.trim();
+    if (tagName.isEmpty) {
+      SmartDialog.showToast("标签名不能为空");
+      return false;
+    }
+    if (tagName == allTagName) {
+      SmartDialog.showToast("不能使用保留名称“$allTagName”");
+      return false;
+    }
+    if (tagName.length > DBService.followTagMaxLength) {
+      SmartDialog.showToast("标签名长度不能超过${DBService.followTagMaxLength}个字符");
+      return false;
+    }
+    if (DBService.instance.getFollowTagExistByTag(tagName)) {
+      SmartDialog.showToast("标签名重复，添加失败");
+      return false;
+    }
+    final tag = await DBService.instance.addFollowTag(tagName);
+    if (tag == null) {
+      return false;
+    }
+    followTagList.add(tag);
+    return true;
+  }
+
+  /// 重命名标签：同步更新实体、实体成员关系与所有 FollowUser.tag 冗余字符串
+  Future<bool> renameTag(FollowUserTag tag, String newName) async {
+    final tagName = newName.trim();
+    if (tagName == tag.tag) {
+      return true;
+    }
+    if (tagName.isEmpty) {
+      SmartDialog.showToast("标签名不能为空，修改失败");
+      return false;
+    }
+    if (tagName == allTagName) {
+      SmartDialog.showToast("不能使用保留名称“$allTagName”");
+      return false;
+    }
+    if (tagName.length > DBService.followTagMaxLength) {
+      SmartDialog.showToast("标签名长度不能超过${DBService.followTagMaxLength}个字符，修改失败");
+      return false;
+    }
+    if (DBService.instance.getFollowTagExistByTag(tagName)) {
+      SmartDialog.showToast("标签名重复，修改失败");
+      return false;
+    }
+    final oldName = tag.tag;
+    tag.tag = tagName;
+    await DBService.instance.updateFollowTag(tag);
+    // 同步成员的冗余字符串
+    for (final id in tag.userId) {
+      final follow = DBService.instance.followBox.get(id);
+      if (follow != null && follow.tag.trim() == oldName) {
+        follow.tag = tagName;
+        await DBService.instance.addFollow(follow);
+      }
+    }
+    // 旧数据可能存在"字符串有、实体成员缺"的关注，一并修正
+    for (final item in allList) {
+      if (item.tag.trim() == oldName && !tag.userId.contains(item.id)) {
+        item.tag = tagName;
+        await DBService.instance.addFollow(item);
+        tag.userId.add(item.id);
+      }
+    }
+    if (tag.userId.isNotEmpty) {
+      await DBService.instance.updateFollowTag(tag);
+    }
+    final index = followTagList.indexWhere((e) => e.id == tag.id);
+    if (index >= 0) {
+      followTagList[index] = tag;
+    }
+    if (selectedTagName.value == oldName) {
+      selectedTagName.value = tagName;
+    }
+    return true;
+  }
+
+  /// 删除标签：成员归还"全部"，删除实体
+  Future<bool> deleteTag(FollowUserTag tag) async {
+    for (final id in List<String>.from(tag.userId)) {
+      final follow = DBService.instance.followBox.get(id);
+      if (follow != null && follow.tag.trim() == tag.tag) {
+        follow.tag = allTagName;
+        await DBService.instance.addFollow(follow);
+      }
+    }
+    await DBService.instance.deleteFollowTag(tag.id);
+    followTagList.remove(tag);
+    for (final item in allList) {
+      if (item.tag.trim() == tag.tag) {
+        item.tag = allTagName;
+        await DBService.instance.addFollow(item);
+      }
+    }
+    if (selectedTagName.value == tag.tag) {
+      selectedTagName.value = allTagName;
+    }
+    return true;
+  }
+
+  /// 把关注移动到目标标签（直播间"设置标签"入口使用），等价手机端 setItemTag
+  Future<bool> setItemTag(FollowUser item, String targetTagName) async {
+    final currentName = item.tag.trim();
+    if (currentName == targetTagName) {
+      return true;
+    }
+    if (targetTagName != allTagName) {
+      final targetTag = followTagList.firstWhereOrNull(
+        (e) => e.tag.trim() == targetTagName,
+      );
+      if (targetTag == null) {
+        SmartDialog.showToast("标签不存在：$targetTagName");
+        return false;
+      }
+      if (!targetTag.userId.contains(item.id)) {
+        targetTag.userId.add(item.id);
+        await DBService.instance.updateFollowTag(targetTag);
+      }
+    }
+    if (currentName != allTagName) {
+      final currentTag = followTagList.firstWhereOrNull(
+        (e) => e.tag.trim() == currentName,
+      );
+      if (currentTag != null && currentTag.userId.remove(item.id)) {
+        await DBService.instance.updateFollowTag(currentTag);
+      }
+    }
+    item.tag = targetTagName;
+    await DBService.instance.addFollow(item);
+    EventBus.instance.emit(Constant.kUpdateFollow, null);
+    return true;
   }
 
   void setSearchKeyword(String value) {
@@ -809,7 +995,7 @@ class FollowUserService extends BasePageController<FollowUser> {
     if (!force &&
         lastStartedAt != null &&
         now.difference(lastStartedAt) < updateStatusCooldown) {
-      Log.logPrint("关注状态刷新过于频繁，已跳过本次网络刷新");
+      Log.i("关注状态刷新过于频繁，已跳过本次网络刷新");
       updating.value = false;
       _resetRefreshProgress();
       sortList();
@@ -820,7 +1006,7 @@ class FollowUserService extends BasePageController<FollowUser> {
         refreshProgress.value.active &&
         refreshProgress.value.scopeKey == resolvedScope.scopeKey &&
         !refreshProgress.value.completed) {
-      Log.logPrint("同一刷新任务仍在进行，复用当前进度: ${resolvedScope.scopeKey}");
+      Log.i("同一刷新任务仍在进行，复用当前进度: ${resolvedScope.scopeKey}");
       return;
     }
 
@@ -829,7 +1015,7 @@ class FollowUserService extends BasePageController<FollowUser> {
     final automatic = resolvedScope.automatic;
     _cancelRefreshProgressReset();
     if (updating.value) {
-      Log.logPrint("已有关注状态刷新任务，旧任务会被新任务替换");
+      Log.i("已有关注状态刷新任务，旧任务会被新任务替换");
     }
     updating.value = true;
     _setRefreshProgress(
@@ -854,7 +1040,7 @@ class FollowUserService extends BasePageController<FollowUser> {
         (Sites.allSites[Constant.kDouyin]?.liveSite as DouyinSite?)?.cookie ??
             "",
       );
-      Log.logPrint(
+      Log.i(
         "开始更新关注状态，并发数: $concurrency，模式: ${_getConcurrencyMode()}，总数: ${followList.length}，"
         "scope=${resolvedScope.scopeKey} fullDouyinCookie=$hasFullDouyinCookie",
       );
@@ -924,7 +1110,7 @@ class FollowUserService extends BasePageController<FollowUser> {
         }
       }
       if (resumeTask) {
-        Log.logPrint(
+        Log.i(
           "继续上次未完成的全量关注刷新：scope=${resolvedScope.scopeKey} remaining=$pendingKeys.length",
         );
       }
@@ -1021,7 +1207,7 @@ class FollowUserService extends BasePageController<FollowUser> {
       sortList();
       if (douyinLimiter != null) {
         final summary = douyinLimiter.finish(douyinTargetCount);
-        Log.logPrint(
+        Log.i(
           "抖音关注刷新总结 scope=${resolvedScope.scopeKey} target=${summary.targetCount} "
           "startConcurrency=${summary.initialConcurrency} "
           "startInterval=${summary.initialInterval.inMilliseconds}ms "
@@ -1054,7 +1240,7 @@ class FollowUserService extends BasePageController<FollowUser> {
       if (!automatic && generation == _updateGeneration) {
         final detailTargets = _buildManualDetailTargets(followList);
         if (detailTargets.isNotEmpty) {
-          Log.logPrint(
+          Log.i(
             "${_metadataPhaseLog(true, detailTargets.length)}，scope=${resolvedScope.scopeKey}",
           );
           await _refreshMetadataTargets(
@@ -1176,7 +1362,7 @@ class FollowUserService extends BasePageController<FollowUser> {
           _handleDouyinLimited();
         }
       }
-      Log.logPrint(e);
+      Log.i("关注刷新单项失败: $e");
       if (limited) {
         return const _FollowRefreshItemResult(
           _FollowRefreshItemOutcome.deferred,
@@ -1363,7 +1549,7 @@ class FollowUserService extends BasePageController<FollowUser> {
           successCount++;
         } catch (e) {
           failedCount++;
-          Log.logPrint(
+          Log.i(
             "${_metadataFailureLabel(reconcileDouyinIdentity)}(${item.siteId}/${item.roomId}): $e",
           );
         }
@@ -1394,7 +1580,7 @@ class FollowUserService extends BasePageController<FollowUser> {
       return;
     }
     updateMetadataProgress(done: true);
-    Log.logPrint(
+    Log.i(
       _metadataPhaseLogDone(
         reconcileDouyinIdentity,
         successCount,

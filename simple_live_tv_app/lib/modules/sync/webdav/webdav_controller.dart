@@ -38,6 +38,7 @@ class WebDavController extends BaseController {
   late DAVClient davClient;
 
   final _userFollowJsonName = 'SimpleLive_follows.json';
+  final _userFollowTagsJsonName = 'SimpleLive_follow_tags.json';
   final _userHistoriesJsonName = 'SimpleLive_histories.json';
   final _userBlockedWordJsonName = 'SimpleLive_blocked_word.json';
   final _userBilibiliAccountJsonName = 'SimpleLive_bilibili_account.json';
@@ -188,6 +189,9 @@ class WebDavController extends BaseController {
     _addJsonFile(archive, _userFollowJsonName, {
       'data': profileMap['followUsers'] ?? const [],
     });
+    _addJsonFile(archive, _userFollowTagsJsonName, {
+      'data': profileMap['followUserTags'] ?? const [],
+    });
     _addJsonFile(archive, _userHistoriesJsonName, {
       'data': profileMap['histories'] ?? const [],
     });
@@ -302,6 +306,20 @@ class WebDavController extends BaseController {
       );
       EventBus.instance.emit(Constant.kUpdateFollow, 0);
       Log.i('已恢复关注用户列表：${result.logSummary}');
+    } else if (file.name == _userFollowTagsJsonName && isSyncFollows.value) {
+      final summary = await ProfileBackupService.instance.importProfileJson(
+        utf8.decode(file.content),
+        overwrite: true,
+        options: const ProfileImportOptions(
+          settings: false,
+          shields: false,
+          follows: true,
+          histories: false,
+        ),
+        onProgress: SyncProgressDialog.update,
+      );
+      EventBus.instance.emit(Constant.kUpdateFollow, 0);
+      Log.i('已恢复关注标签：${summary.message}');
     } else if (file.name == _userHistoriesJsonName && isSyncHistories.value) {
       final result = await BulkDataImportService.importHistories(
         jsonData,

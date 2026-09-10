@@ -261,11 +261,11 @@ class ParseController extends GetxController {
     // 但不再进行二次清理，因为标点符号可能是用户名的合法部分
     // 例如：Cc_2365. 或 user!!! 等
     return RegExp(
-          r”https?://[^\s<>\u3000，。！？、；：]+”,
+          r"https?://[^\s<>\u3000，。！？、；：]+",
           caseSensitive: false,
         )
             .firstMatch(text)
             ?.group(0) ??
-        “”;
+        "";
   }
 }

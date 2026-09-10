@@ -27,6 +27,7 @@ import 'package:simple_live_tv_app/routes/app_navigation.dart';
 import 'package:simple_live_tv_app/routes/app_pages.dart';
 import 'package:simple_live_tv_app/routes/route_path.dart';
 import 'package:simple_live_tv_app/services/bilibili_account_service.dart';
+import 'package:simple_live_tv_app/services/crash_report_service.dart';
 import 'package:simple_live_tv_app/services/current_room_service.dart';
 import 'package:simple_live_tv_app/services/db_service.dart';
 import 'package:simple_live_tv_app/services/douyin_account_service.dart';
@@ -39,6 +40,8 @@ import 'package:window_manager/window_manager.dart';
 
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 全局崩溃捕获：先于一切初始化，保证后续异常都能落盘
+  await CrashReportService.instance.init();
   DesktopStartupArgs.initialize(args);
   await writeDesktopStartupLog(
     "start args=${args.join(" ")} "

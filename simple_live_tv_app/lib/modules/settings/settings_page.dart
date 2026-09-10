@@ -245,6 +245,21 @@ class SettingsPage extends GetView<SettingsController> {
         AppStyle.vGap24,
         Obx(
           () => SettingsItemWidget(
+            foucsNode: AppFocusNode(),
+            title: "遥控器OK键行为",
+            items: const {
+              AppSettingsController.kOkKeyActionShowControls: "显示/隐藏控制栏",
+              AppSettingsController.kOkKeyActionPlayPause: "暂停/继续",
+            },
+            value: AppSettingsController.instance.okKeyAction.value,
+            onChanged: (e) {
+              AppSettingsController.instance.setOkKeyAction(e);
+            },
+          ),
+        ),
+        AppStyle.vGap24,
+        Obx(
+          () => SettingsItemWidget(
             foucsNode: controller.scaleFoucsNode,
             autofocus: controller.scaleFoucsNode.isFoucsed.value,
             title: "画面比例",

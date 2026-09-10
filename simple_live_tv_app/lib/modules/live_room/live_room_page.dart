@@ -67,11 +67,13 @@ class LiveRoomPage extends GetView<LiveRoomController> {
       }
       return;
     }
-    // 点击OK、Enter、Select键时显示/隐藏控制器
+    // 点击OK、Enter、Select键：按"OK键行为"设置触发暂停/继续或显示/隐藏控制栏
     if (key.logicalKey == LogicalKeyboardKey.select ||
         key.logicalKey == LogicalKeyboardKey.enter ||
         key.logicalKey == LogicalKeyboardKey.space) {
-      if (!controller.showControlsState.value) {
+      if (AppSettingsController.instance.okKeyTriggersPlayPause) {
+        controller.togglePlayPause();
+      } else if (!controller.showControlsState.value) {
         controller.showControls();
       } else {
         controller.hideControls();
@@ -193,9 +195,14 @@ class LiveRoomPage extends GetView<LiveRoomController> {
                       size: 64,
                     ),
                     AppStyle.vGap12,
-                    Text(
-                      "已暂停 · 按播放键继续",
-                      style: AppStyle.textStyleWhite,
+                    Obx(
+                      () => Text(
+                        AppSettingsController
+                                .instance.okKeyTriggersPlayPause
+                            ? "已暂停 · 按OK键或播放键继续"
+                            : "已暂停 · 按播放键继续",
+                        style: AppStyle.textStyleWhite,
+                      ),
                     ),
                   ],
                 ),

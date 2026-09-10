@@ -119,6 +119,9 @@ class LocalStorageService extends GetxService {
   /// 播放器后台自动暂停
   static const String kPlayerAutoPause = "PlayerAutoPause";
 
+  /// 遥控器OK键行为：0=显示/隐藏控制栏（默认） 1=暂停/继续
+  static const String kOkKeyAction = "OkKeyAction";
+
   /// 播放器缓冲区大小
   static const String kPlayerBufferSize = "PlayerBufferSize";
   static const String kPlayerForceHttps = "PlayerForceHttps";

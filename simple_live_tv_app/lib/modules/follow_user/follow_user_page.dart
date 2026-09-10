@@ -10,7 +10,9 @@ import 'package:simple_live_tv_app/app/controller/app_settings_controller.dart';
 import 'package:simple_live_tv_app/app/sites.dart';
 import 'package:simple_live_tv_app/app/utils.dart';
 import 'package:simple_live_tv_app/routes/app_navigation.dart';
+import 'package:simple_live_tv_app/models/db/follow_user_tag.dart';
 import 'package:simple_live_tv_app/services/current_room_service.dart';
+import 'package:simple_live_tv_app/services/db_service.dart';
 import 'package:simple_live_tv_app/services/follow_user_service.dart';
 import 'package:simple_live_tv_app/widgets/app_scaffold.dart';
 import 'package:simple_live_tv_app/widgets/button/highlight_button.dart';
@@ -390,10 +392,102 @@ class _FollowUserPageState extends State<FollowUserPage> {
                   )
                   .toList(),
             ),
+            AppStyle.vGap24,
+            Text("标签管理", style: AppStyle.titleStyleWhite.copyWith(fontSize: 26.w)),
+            AppStyle.vGap16,
+            Wrap(
+              spacing: 16.w,
+              runSpacing: 16.w,
+              children: [
+                HighlightButton(
+                  focusNode: AppFocusNode(),
+                  iconData: Icons.add,
+                  text: "新增标签",
+                  onTap: _showAddTagDialog,
+                ),
+              ],
+            ),
+            AppStyle.vGap16,
+            ...FollowUserService.instance.followTagList
+                .map((tag) => _buildTagManageRow(tag))
+                .toList(),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildTagManageRow(FollowUserTag tag) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 12.w),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              "${tag.tag}（${tag.userId.length}）",
+              style: AppStyle.textStyleWhite,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          HighlightButton(
+            focusNode: AppFocusNode(),
+            iconData: Icons.edit,
+            text: "改名",
+            onTap: () => _showRenameTagDialog(tag),
+          ),
+          AppStyle.hGap12,
+          HighlightButton(
+            focusNode: AppFocusNode(),
+            iconData: Icons.delete_outline,
+            text: "删除",
+            onTap: () => _showDeleteTagDialog(tag),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAddTagDialog() async {
+    final result = await Utils.showEditTextDialog(
+      "",
+      title: "新增标签",
+      hintText: "最多${DBService.followTagMaxLength}个字符",
+      confirm: "添加",
+      validate: (e) => e.trim().length <= DBService.followTagMaxLength,
+    );
+    if (result == null) {
+      return;
+    }
+    await FollowUserService.instance.addTag(result);
+  }
+
+  Future<void> _showRenameTagDialog(FollowUserTag tag) async {
+    final result = await Utils.showEditTextDialog(
+      tag.tag,
+      title: "修改标签名",
+      hintText: "最多${DBService.followTagMaxLength}个字符",
+      confirm: "确定",
+      validate: (e) => e.trim().length <= DBService.followTagMaxLength,
+    );
+    if (result == null) {
+      return;
+    }
+    await FollowUserService.instance.renameTag(tag, result);
+    Get.back();
+    _showTagDialog();
+  }
+
+  Future<void> _showDeleteTagDialog(FollowUserTag tag) async {
+    final result = await Utils.showAlertDialog(
+      "确定删除标签“${tag.tag}”吗？\n该标签下的关注将移回“${FollowUserService.allTagName}”。",
+      title: "删除标签",
+    );
+    if (!result) {
+      return;
+    }
+    await FollowUserService.instance.deleteTag(tag);
+    Get.back();
+    _showTagDialog();
   }
 
   void _showDisplayDialog() {

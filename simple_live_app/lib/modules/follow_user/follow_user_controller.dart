@@ -626,13 +626,23 @@ class FollowUserController extends BasePageController<FollowUser> {
       SmartDialog.showToast("标签名重复，修改失败");
       return;
     }
-    final FollowUserTag newTag = followUserTag.copyWith(tag: newTagName);
+    // 限制长度
+    final String trimmedName = newTagName.trim();
+    if (trimmedName.isEmpty) {
+      SmartDialog.showToast("标签名不能为空，修改失败");
+      return;
+    }
+    if (trimmedName.length > 8) {
+      SmartDialog.showToast("标签名长度不能超过8个字符，修改失败");
+      return;
+    }
+    final FollowUserTag newTag = followUserTag.copyWith(tag: trimmedName);
     updateTag(newTag);
     // update item's tag when update tagName
     for (var i in newTag.userId) {
       var follow = DBService.instance.followBox.get(i);
       if (follow != null) {
-        follow.tag = newTagName;
+        follow.tag = trimmedName;
         updateItem(follow);
       }
     }
