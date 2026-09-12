@@ -75,7 +75,8 @@ class _FollowUserPageState extends State<FollowUserPage> {
       return _TvFollowLayoutSpec(
         displayStyle: AnchorCardDisplayStyle.card,
         crossAxisCount: 2,
-        mainAxisExtent: showLiveCover ? 300.w : 250.w,
+        // 卡片内容高度接近固定值，留足余量，避免设备字体缩放导致底部被裁切
+        mainAxisExtent: showLiveCover ? 300.w : 268.w,
         mainAxisSpacing: 24.w,
         crossAxisSpacing: 28.w,
       );
