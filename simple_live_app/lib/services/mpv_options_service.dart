@@ -137,19 +137,22 @@ class MpvOptionsService {
   }
 
   static Map<String, String> _profileOptionsForPlatform(String profile) {
+    Map<String, String> base;
     if (profile == "balanced") {
-      return Platform.isWindows
+      base = Platform.isWindows
           ? desktopProfiles["balanced"]!
           : desktopProfiles["balancedDesktop"]!;
+    } else {
+      base = desktopProfiles[profile] ?? desktopProfiles["balanced"]!;
     }
-    return desktopProfiles[profile] ?? desktopProfiles["balanced"]!;
+    // Windows: d3d11va-copy avoids #115 zero-copy black screen on slim mpv.
+    if (Platform.isWindows) {
+      base = {...base, "hwdec": "d3d11va-copy"};
+    }
+    return base;
   }
 
   static String? _desktopVideoControllerHwdec(MpvEffectiveOptions options) {
-    final source = options.source["hwdec"];
-    if (Platform.isWindows && source == "profile:balanced") {
-      return null;
-    }
     return options.options["hwdec"];
   }
 

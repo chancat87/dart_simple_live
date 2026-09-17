@@ -295,11 +295,8 @@ class AppSettingsController extends GetxController {
     importedMpvConfPath.value = LocalStorageService.instance
         .getValue(LocalStorageService.kImportedMpvConfPath, "");
 
-    LocalStorageService.instance
-        .setValue(LocalStorageService.kLiveSubtitleEnable, false);
-    LocalStorageService.instance
-        .setValue(LocalStorageService.kLiveSubtitleStartupGuard, false);
-    liveSubtitleEnable.value = false;
+    liveSubtitleEnable.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kLiveSubtitleEnable, false);
     liveSubtitleModelPath.value = LocalStorageService.instance
         .getValue(LocalStorageService.kLiveSubtitleModelPath, "");
     liveSubtitleLanguage.value = LocalStorageService.instance

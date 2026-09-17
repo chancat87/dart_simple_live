@@ -45,7 +45,7 @@ class LiveSubtitleModelInfo {
 
 class LiveSubtitleService extends GetxService {
   static LiveSubtitleService get instance => Get.find<LiveSubtitleService>();
-  static const bool kFeatureEnabled = false;
+  static const bool kFeatureEnabled = true;
 
   final RxString subtitleText = "".obs;
   final RxBool running = false.obs;
@@ -345,7 +345,8 @@ class LiveSubtitleService extends GetxService {
       await desktopEngine.start();
       await _setStartupGuard(false);
       statusText.value = "实时字幕识别中";
-    } catch (e) {
+    } catch (e, st) {
+      _dbgLog("startup failed: $e\n$st");
       await _setStartupGuard(false);
       AppSettingsController.instance.setLiveSubtitleEnable(false);
       statusText.value = "实时字幕启动失败";
@@ -357,6 +358,21 @@ class LiveSubtitleService extends GetxService {
       _activeDesktopKey = null;
       running.value = false;
     }
+  }
+
+  /// Synchronous debug log that flushes immediately to survive native crashes.
+  static void _dbgLog(String msg) {
+    try {
+      final ts = DateTime.now().toIso8601String();
+      final line = "[$ts] $msg\n";
+      // Write to stderr (visible when launched from console / batch redirect)
+      // ignore: avoid_print
+      stderr.write(line);
+      // Also append synchronously to a file next to the exe
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      final f = File("$exeDir\\subtitle_debug.log");
+      f.writeAsStringSync(line, mode: FileMode.append, flush: true);
+    } catch (_) {}
   }
 
   Future<void> _setStartupGuard(bool value) async {
@@ -410,8 +426,13 @@ class LiveSubtitleService extends GetxService {
 class _DesktopLiveSubtitleEngine {
   static const int _sampleRate = 16000;
   static const int _bytesPerSample = 2;
-  static const int _chunkSeconds = 4;
-  static const int _chunkBytes = _sampleRate * _bytesPerSample * _chunkSeconds;
+  // 正常每轮（200ms）只读到约 0.2s 新音频。积压超过该阈值（0.7s）时，
+  // 丢弃最旧的音频、只追最新内容，保证字幕贴近直播、不突发追赶。
+  static const int _keepUpBytes = (_sampleRate * _bytesPerSample * 7) ~/ 10;
+  // 字幕条最多显示的字符数（始终保留最新内容），约两行，避免省略号吃掉新字幕。
+  static const int _maxDisplayChars = 30;
+  // 多久没有新识别结果后自动隐藏字幕条（毫秒）。
+  static const int _hideAfterMs = 5000;
 
   final LiveSubtitleModelInfo modelInfo;
   final String mediaUrl;
@@ -429,7 +450,12 @@ class _DesktopLiveSubtitleEngine {
   sherpa.OfflineRecognizer? _offlineRecognizer;
   sherpa.OnlineRecognizer? _onlineRecognizer;
   sherpa.OnlineStream? _onlineStream;
-  String _lastText = "";
+  sherpa.OfflinePunctuation? _punctuation;
+  // 已定稿的历史文本（跨端点累积），当前正在说的半句不包含在内。
+  String _finalText = "";
+  // 去重与自动隐藏：上一次推送的文本及其更新时间。
+  String _lastEmitted = "";
+  DateTime _lastChange = DateTime.now();
 
   _DesktopLiveSubtitleEngine({
     required this.modelInfo,
@@ -475,13 +501,45 @@ class _DesktopLiveSubtitleEngine {
     );
 
     _controller.add("正在采集直播音频");
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       unawaited(_readAndDecode());
     });
   }
 
+  /// 可选标点模型：在 ASR 模型目录下的 `punct/model.onnx`
+  /// （sherpa-onnx CT-Transformer 中英标点模型）。存在才加载，缺失不影响识别。
+  void _maybeLoadPunctuation(String asrDir) {
+    final candidates = [
+      p.join(asrDir, "punct", "model.onnx"),
+      p.join(asrDir, "punct", "model.int8.onnx"),
+      p.join(asrDir, "ct-transformer.onnx"),
+    ];
+    final punctPath = candidates.firstWhere(
+      (path) => File(path).existsSync(),
+      orElse: () => "",
+    );
+    if (punctPath.isEmpty) {
+      return;
+    }
+    try {
+      _punctuation = sherpa.OfflinePunctuation(
+        config: sherpa.OfflinePunctuationConfig(
+          model: sherpa.OfflinePunctuationModelConfig(
+            ctTransformer: punctPath,
+            numThreads: 1,
+            debug: false,
+          ),
+        ),
+      );
+    } catch (e) {
+      LiveSubtitleService._dbgLog("punctuation model load failed: $e");
+      _punctuation = null;
+    }
+  }
+
   void _createRecognizer() {
     final dir = modelInfo.directory;
+    _maybeLoadPunctuation(dir);
     switch (modelInfo.type) {
       case "paraformer":
         _offlineRecognizer = sherpa.OfflineRecognizer(
@@ -529,11 +587,11 @@ class _DesktopLiveSubtitleEngine {
                 joiner: p.join(dir, "joiner-epoch-99-avg-1.int8.onnx"),
               ),
               tokens: p.join(dir, "tokens.txt"),
-              numThreads: 1,
+              numThreads: 2,
               debug: false,
-              modelType: "zipformer2",
+              modelType: "zipformer",
               modelingUnit: "bpe",
-              bpeVocab: p.join(dir, "bpe.vocab"),
+              bpeVocab: p.join(dir, "bpe.model"),
             ),
           ),
         );
@@ -555,45 +613,127 @@ class _DesktopLiveSubtitleEngine {
       }
       _audioFile ??= await _pcmFile!.open(mode: FileMode.read);
       final length = await _audioFile!.length();
-      if (length <= _readOffset + _chunkBytes) {
+      var available = length - _readOffset;
+      if (available <= _bytesPerSample) {
+        _checkStale();
         return;
       }
-      final available = length - _readOffset;
-      final readBytes = available > _chunkBytes ? _chunkBytes : available;
+      // 同步优先：积压过多说明识别没跟上直播，丢弃最旧音频只保留最新 0.7s，
+      // 避免延迟越积越大、再突发解码一大块（这会造成时快时慢和叠字）。
+      if (available > _keepUpBytes) {
+        final skip = available - _keepUpBytes;
+        _readOffset += skip;
+        available = _keepUpBytes;
+        // 音频出现断层，丢弃当前半句并换全新识别流，避免跨断层重复。
+        _recreateOnlineStream();
+      }
       await _audioFile!.setPosition(_readOffset);
-      final bytes = await _audioFile!.read(readBytes);
+      final bytes = await _audioFile!.read(available);
       _readOffset += bytes.length;
       final samples = _pcm16ToFloat32(bytes);
       if (samples.isEmpty) {
+        _checkStale();
         return;
       }
-      final text = _decodeSamples(samples).trim();
-      if (text.isNotEmpty && text != _lastText) {
-        _lastText = text;
-        _controller.add(text);
+      if (_onlineRecognizer != null) {
+        _feedOnline(samples);
+      } else {
+        final text = _decodeOffline(samples).trim();
+        if (text.isNotEmpty) {
+          _pushDisplay(_addPunctuation(text));
+        }
       }
+      _checkStale();
     } catch (e) {
+      LiveSubtitleService._dbgLog("read/decode error: $e");
       _controller.add("字幕识别失败：$e");
     } finally {
       _decoding = false;
     }
   }
 
-  String _decodeSamples(Float32List samples) {
-    final onlineRecognizer = _onlineRecognizer;
-    final onlineStream = _onlineStream;
-    if (onlineRecognizer != null && onlineStream != null) {
-      onlineStream.acceptWaveform(samples: samples, sampleRate: _sampleRate);
-      while (onlineRecognizer.isReady(onlineStream)) {
-        onlineRecognizer.decode(onlineStream);
-      }
-      final result = onlineRecognizer.getResult(onlineStream).text;
-      if (onlineRecognizer.isEndpoint(onlineStream)) {
-        onlineRecognizer.reset(onlineStream);
-      }
-      return result;
+  /// 标准 sherpa-onnx 流式识别循环：小批量喂入 -> decode -> 取当前半句 ->
+  /// 检测到端点则把该句定稿，并换全新识别流（而非复用 reset），杜绝跨句状态残留。
+  void _feedOnline(Float32List samples) {
+    final recognizer = _onlineRecognizer;
+    var stream = _onlineStream;
+    if (recognizer == null || stream == null) {
+      return;
     }
+    stream.acceptWaveform(samples: samples, sampleRate: _sampleRate);
+    while (recognizer.isReady(stream)) {
+      recognizer.decode(stream);
+    }
+    final current = recognizer.getResult(stream).text.trim();
+    if (recognizer.isEndpoint(stream)) {
+      if (current.isNotEmpty) {
+        _finalizeSegment(current);
+      }
+      _recreateOnlineStream();
+      _pushDisplay("");
+    } else {
+      _pushDisplay(current);
+    }
+  }
 
+  void _recreateOnlineStream() {
+    final recognizer = _onlineRecognizer;
+    if (recognizer == null) {
+      return;
+    }
+    _onlineStream?.free();
+    _onlineStream = recognizer.createStream();
+  }
+
+  void _finalizeSegment(String segment) {
+    final punctuated = _addPunctuation(segment).trim();
+    if (punctuated.isNotEmpty) {
+      _finalText = (_finalText + punctuated).trim();
+    }
+  }
+
+  /// 合并已定稿历史与当前半句，始终只保留最新的 [_maxDisplayChars] 个字符。
+  void _pushDisplay(String current) {
+    final combined = (_finalText + current).trim();
+    final display = combined.length > _maxDisplayChars
+        ? combined.substring(combined.length - _maxDisplayChars)
+        : combined;
+    if (display == _lastEmitted) {
+      return;
+    }
+    _lastEmitted = display;
+    _lastChange = DateTime.now();
+    _controller.add(display);
+  }
+
+  /// 长时间没有新结果则清空并隐藏字幕条，给后续字幕留出空间。
+  void _checkStale() {
+    if (_lastEmitted.isEmpty) {
+      return;
+    }
+    if (DateTime.now().difference(_lastChange).inMilliseconds >
+        _hideAfterMs) {
+      _finalText = "";
+      _lastEmitted = "";
+      _recreateOnlineStream();
+      _controller.add("");
+    }
+  }
+
+  /// 若加载了标点模型则补标点，否则原样返回。
+  String _addPunctuation(String text) {
+    final punct = _punctuation;
+    if (punct == null || text.trim().isEmpty) {
+      return text;
+    }
+    try {
+      return punct.addPunct(text);
+    } catch (_) {
+      return text;
+    }
+  }
+
+  String _decodeOffline(Float32List samples) {
     final recognizer = _offlineRecognizer;
     if (recognizer == null) {
       return "";
@@ -632,6 +772,8 @@ class _DesktopLiveSubtitleEngine {
     _onlineStream = null;
     _onlineRecognizer?.free();
     _onlineRecognizer = null;
+    _punctuation?.free();
+    _punctuation = null;
     final file = _pcmFile;
     _pcmFile = null;
     if (file != null && await file.exists()) {
